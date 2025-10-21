@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="description" content="Health, Safety & Environment Management System">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="HSE Insight">
+    <title>HSE Insight - Health, Safety & Environment Management</title>
+    
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3C/svg%3E">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    
+    <style>
+        * { 
+            -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+        #root { 
+            min-height: 100vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        
+        /* Custom Scrollbar */
+        *::-webkit-scrollbar { width: 8px; height: 8px; }
+        *::-webkit-scrollbar-track { background: #f1f1f1; }
+        *::-webkit-scrollbar-thumb { 
+            background: #888; 
+            border-radius: 4px; 
+        }
+        *::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Firefox */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #888 #f1f1f1;
+        }
+        
+        /* Mobile touch scrolling */
+        * {
+            -webkit-overflow-scrolling: touch;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+    const { useState, useEffect } = React;
+    const firebaseConfig = {
+              apiKey: "AIzaSyBiUXtSND61UmBl_cOWTP4gAX0TDktlSXg",
+                authDomain: "hse-insight-1ce80.firebaseapp.com",
+                databaseURL: "https://hse-insight-1ce80-default-rtdb.asia-southeast1.firebasedatabase.app",
+                projectId: "hse-insight-1ce80",
+                storageBucket: "hse-insight-1ce80.firebasestorage.app",
+                messagingSenderId: "440975031473",
+                appId: "1:440975031473:web:fb08c1b6095f65c4697690"
+        };
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const database = firebase.database();
+
+        const App = () => {
+            const [currentUser, setCurrentUser] = useState(null);
+            const [currentPage, setCurrentPage] = useState('login');
+            const [showSignup, setShowSignup] = useState(false);
+            const [sidebarOpen, setSidebarOpen] = useState(false);
+            const [activities, setActivities] = useState([]);
+            const [empId, setEmpId] = useState('');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [signupData, setSignupData] = useState({
+                empId: '', password: '', confirmPassword: '', name: '', email: '', phone: '', 
+                role: 'site_officer', project: '', department: ''
+            });
+            // Load activities when user logs in
+            useEffect(() => {
+                if (currentUser) {
+                    loadActivities();
+                }
+            }, [currentUser]);
+
+            const loadActivities = () => {
+                if (!currentUser) return;
+                
+                const projectRef = database.ref('activities/' + currentUser.project.replace(/\s+/g, '_'));
+                
+                projectRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        const activitiesArray = Object.keys(data).map(key => ({
+                            id: key,
+                            ...data[key]
+                        }));
+                        setActivities(activitiesArray);
+                    } else {
+                        setActivities([]);
+                    }
+                });
+            };
+            const addActivity = async (type, description, details) => {
+                if (!currentUser) {
+                    alert('Please login first');
+                    return;
+                }
+
+                try {
+                    const projectRef = database.ref('activities/' + currentUser.project.replace(/\s+/g, '_'));
+                    
+                    const newActivity = {
+                        type,
+                        description,
+                        timestamp: new Date().toLocaleString(),
+                        details,
+                        submittedBy: currentUser.name,
+                        submittedByEmpId: currentUser.empId,
+                        project: currentUser.project
+                    };
+
+                    await projectRef.push(newActivity);
+                    console.log('Activity saved successfully');
+                } catch (error) {
+                    console.error('Error saving activity:', error);
+                    alert('Failed to save activity. Please try again.');
+                }
+            };
+            const handleSignup = async () => {
+                if (!signupData.empId || !signupData.password || !signupData.name || !signupData.email || !signupData.project) {
+                    alert('Please fill all required fields');
+                    return;
+                }
+                if (signupData.password !== signupData.confirmPassword) {
+                    alert('Passwords do not match');
+                    return;
+                }
+
+                setLoading(true);
+                setError('');
+
+                try {
+                    const userRef = database.ref('users/' + signupData.empId);
+                    
+                    // Check if user exists
+                    const snapshot = await userRef.once('value');
+                    if (snapshot.exists()) {
+                        alert('Employee ID already exists. Please use a different ID or login.');
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Create new user
+                    const userData = {
+                        empId: signupData.empId,
+                        password: signupData.password,
+                        name: signupData.name,
+                        email: signupData.email,
+                        phone: signupData.phone,
+                        role: signupData.role,
+                        project: signupData.project,
+                        department: signupData.department,
+                        createdAt: new Date().toISOString()
+                    };
+
+                    await userRef.set(userData);
+                    
+                    alert('Registration successful! Please login with your credentials.');
+                    setShowSignup(false);
+                    setSignupData({ empId: '', password: '', confirmPassword: '', name: '', email: '', phone: '', role: 'site_officer', project: '', department: '' });
+                } catch (error) {
+                    console.error('Signup error:', error);
+                    setError('Failed to create account. Please check your internet connection.');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+
+            const handleLogin = async () => {
+                if (!empId || !password) {
+                    setError('Please enter Employee ID and Password');
+                    return;
+                }
+
+                setLoading(true);
+                setError('');
+
+                try {
+                    const userRef = database.ref('users/' + empId);
+                    const snapshot = await userRef.once('value');
+                    const userData = snapshot.val();
+
+                    if (userData && userData.password === password) {
+                        setCurrentUser(userData);
+                        setCurrentPage('home');
+                        setEmpId('');
+                        setPassword('');
+                    } else {
+                        setError('Invalid credentials. Please check your Employee ID and Password or sign up.');
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    setError('Failed to login. Please check your internet connection.');
+                } finally {
+                    setLoading(false);
+                }
+            }; 
+            // Lucide Icons Helper
+            const Icon = ({ name, size = 24, color = "currentColor", strokeWidth = 2, ...props }) => {
+                const icons = {
+                    Shield: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+                    UserPlus: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>,
+                    Home: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+                    BookOpen: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+                    Users: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+                    Activity: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+                    FileText: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+                    AlertTriangle: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>,
+                    TrendingUp: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
+                    LogOut: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>,
+                    Menu: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>,
+                    X: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>,
+                    ArrowLeft: () => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="19" x2="5" y1="12" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>,
+                };
+                
+                const IconComponent = icons[name];
+                return IconComponent ? <IconComponent /> : null;
+            };
+
+            // Form configurations
+            const getModulePage = (page) => {
+                const forms = {
+                    observation: { 
+                        title: 'Safety Observation', 
+                        type: 'Safety Observation', 
+                        fields: [
+                            { name: 'location', label: 'Location', required: true },
+                            { name: 'severity', label: 'Severity', type: 'select', required: true, defaultValue: 'low', options: [{value:'low',label:'Low'},{value:'medium',label:'Medium'},{value:'high',label:'High'},{value:'critical',label:'Critical'}]},
+                            { name: 'description', label: 'Description', type: 'textarea', required: true, rows: 4 },
+                            { name: 'correctiveAction', label: 'Corrective Action', type: 'textarea', required: true, rows: 3 }
+                        ]
+                    },
+                    induction: { 
+                        title: 'Induction Training', 
+                        type: 'Induction Training', 
+                        fields: [
+                            { name: 'employeeName', label: 'Employee Name', required: true },
+                            { name: 'contractor', label: 'Contractor', required: true },
+                            { name: 'duration', label: 'Duration (hours)', type: 'number', required: true },
+                            { name: 'attendees', label: 'Attendance Count', type: 'number', required: true },
+                            { name: 'topics', label: 'Topics Covered', type: 'textarea', required: true, rows: 4 }
+                        ]
+                    },
+                    training: { 
+                        title: 'Daily Training Talk', 
+                        type: 'Daily Training Talk', 
+                        fields: [
+                            { name: 'date', label: 'Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'topic', label: 'Topic', required: true, placeholder: 'e.g., Ladder Safety' },
+                            { name: 'attendees', label: 'Number of Attendees', type: 'number', required: true },
+                            { name: 'duration', label: 'Duration (minutes)', type: 'number', required: true },
+                            { name: 'location', label: 'Location' },
+                            { name: 'keyPoints', label: 'Key Points', type: 'textarea', rows: 4 }
+                        ]
+                    },
+                    pep: { 
+                        title: 'PEP Talk', 
+                        type: 'PEP Talk', 
+                        fields: [
+                            { name: 'date', label: 'Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'jobDescription', label: 'Job Description', required: true },
+                            { name: 'location', label: 'Location', required: true },
+                            { name: 'taskSafety', label: 'Task-Specific Safety', type: 'textarea', required: true, rows: 3 },
+                            { name: 'hazards', label: 'Hazards Identified', type: 'textarea', rows: 3 },
+                            { name: 'controls', label: 'Control Measures', type: 'textarea', rows: 3 },
+                            { name: 'attendees', label: 'Attendees', type: 'number', required: true }
+                        ]
+                    },
+                    technical: { 
+                        title: 'Special Technical Training', 
+                        type: 'Special Technical Training', 
+                        fields: [
+                            { name: 'trainingType', label: 'Training Type', type: 'select', required: true, defaultValue: 'height', options: [{value:'height',label:'Work at Height'},{value:'confined',label:'Confined Space'},{value:'electrical',label:'Electrical Safety'},{value:'fire',label:'Fire Safety'}]},
+                            { name: 'trainer', label: 'Trainer Name', required: true },
+                            { name: 'date', label: 'Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'duration', label: 'Duration (hours)', type: 'number', required: true },
+                            { name: 'attendees', label: 'Attendees', type: 'number', required: true },
+                            { name: 'content', label: 'Training Content', type: 'textarea', rows: 4 }
+                        ]
+                    },
+                    saw: { 
+                        title: 'Safety Advisory Warning', 
+                        type: 'Safety Advisory Warning', 
+                        fields: [
+                            { name: 'date', label: 'Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'location', label: 'Location', required: true },
+                            { name: 'severity', label: 'Severity', type: 'select', required: true, defaultValue: 'medium', options: [{value:'low',label:'Low'},{value:'medium',label:'Medium'},{value:'high',label:'High'}]},
+                            { name: 'warning', label: 'Warning Details', type: 'textarea', required: true, rows: 4 },
+                            { name: 'action', label: 'Required Actions', type: 'textarea', required: true, rows: 3 }
+                        ]
+                    },
+                    swo: { 
+                        title: 'Stop Work Order', 
+                        type: 'Stop Work Order', 
+                        fields: [
+                            { name: 'date', label: 'Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'location', label: 'Location', required: true },
+                            { name: 'reason', label: 'Reason for Stop Work', type: 'textarea', required: true, rows: 4 },
+                            { name: 'conditions', label: 'Unsafe Conditions', type: 'textarea', required: true, rows: 3 },
+                            { name: 'issuedTo', label: 'Issued To', required: true }
+                        ]
+                    },
+                    firstaid: { 
+                        title: 'First-Aid Case', 
+                        type: 'First-Aid Case', 
+                        fields: [
+                            { name: 'date', label: 'Date & Time', type: 'datetime-local', required: true },
+                            { name: 'personName', label: 'Person Name', required: true },
+                            { name: 'injuryType', label: 'Injury Type', required: true, placeholder: 'e.g., Cut, Bruise' },
+                            { name: 'bodyPart', label: 'Body Part Affected', required: true },
+                            { name: 'treatment', label: 'Treatment Given', type: 'textarea', required: true, rows: 4 },
+                            { name: 'location', label: 'Location', required: true }
+                        ]
+                    },
+                    nearmiss: { 
+                        title: 'Near Miss Report', 
+                        type: 'Near Miss Report', 
+                        fields: [
+                            { name: 'date', label: 'Date & Time', type: 'datetime-local', required: true },
+                            { name: 'location', label: 'Location', required: true },
+                            { name: 'description', label: 'Description', type: 'textarea', required: true, rows: 4 },
+                            { name: 'potentialInjury', label: 'Potential Injury/Damage', type: 'textarea', required: true, rows: 3 },
+                            { name: 'correctiveAction', label: 'Corrective Action', type: 'textarea', required: true, rows: 3 }
+                        ]
+                    },
+                    dangerous: { 
+                        title: 'Dangerous Occurrence', 
+                        type: 'Dangerous Occurrence', 
+                        fields: [
+                            { name: 'date', label: 'Date & Time', type: 'datetime-local', required: true },
+                            { name: 'location', label: 'Location', required: true },
+                            { name: 'incidentType', label: 'Incident Type', required: true },
+                            { name: 'description', label: 'Detailed Description', type: 'textarea', required: true, rows: 5 },
+                            { name: 'injuries', label: 'Injuries (if any)', type: 'textarea', rows: 2 },
+                            { name: 'immediateAction', label: 'Immediate Action Taken', type: 'textarea', required: true, rows: 3 }
+                        ]
+                    },
+                    sic: { 
+                        title: 'SIC Meeting', 
+                        type: 'SIC Meeting', 
+                        fields: [
+                            { name: 'date', label: 'Meeting Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'attendees', label: 'Number of Attendees', type: 'number', required: true },
+                            { name: 'agenda', label: 'Meeting Agenda', type: 'textarea', required: true, rows: 3 },
+                            { name: 'discussions', label: 'Key Discussions', type: 'textarea', required: true, rows: 4 },
+                            { name: 'actionItems', label: 'Action Items', type: 'textarea', rows: 3 }
+                        ]
+                    },
+                    goodpractice: { 
+                        title: 'Good Practice', 
+                        type: 'Good Practice', 
+                        fields: [
+                            { name: 'date', label: 'Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'title', label: 'Practice Title', required: true },
+                            { name: 'location', label: 'Location' },
+                            { name: 'description', label: 'Description', type: 'textarea', required: true, rows: 4 },
+                            { name: 'benefits', label: 'Benefits/Impact', type: 'textarea', rows: 3 }
+                        ]
+                    },
+                    rectification: { 
+                        title: 'Rectification', 
+                        type: 'Rectification', 
+                        fields: [
+                            { name: 'observationRef', label: 'Observation Reference', required: true },
+                            { name: 'date', label: 'Rectification Date', type: 'date', required: true, defaultValue: new Date().toISOString().split('T')[0] },
+                            { name: 'actionTaken', label: 'Action Taken', type: 'textarea', required: true, rows: 4 },
+                            { name: 'status', label: 'Status', type: 'select', required: true, defaultValue: 'completed', options: [{value:'completed',label:'Completed'},{value:'in-progress',label:'In Progress'},{value:'pending',label:'Pending'}]},
+                            { name: 'verifiedBy', label: 'Verified By', required: true }
+                        ]
+                    }
+                };
+                return forms[page] || null;
+            };
+            const FormPage = ({ title, fields, activityType, hasPhotoUpload }) => {
+                const initialData = {};
+                fields.forEach(f => { initialData[f.name] = f.defaultValue || ''; });
+                const [formData, setFormData] = useState(initialData);
+                const [photos, setPhotos] = useState([]);
+
+                const handlePhotoUpload = (e) => {
+                    const files = Array.from(e.target.files);
+                    const readers = files.map(file => {
+                        return new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve({ name: file.name, data: reader.result });
+                            reader.readAsDataURL(file);
+                        });
+                    });
+                    Promise.all(readers).then(results => {
+                        setPhotos([...photos, ...results]);
+                    });
+                };
+
+                const removePhoto = (index) => {
+                    setPhotos(photos.filter((_, i) => i !== index));
+                };
+
+                const handleSubmit = () => {
+                    const missing = fields.filter(f => f.required && !formData[f.name]);
+                    if (missing.length > 0) {
+                        alert('Please fill all required fields');
+                        return;
+                    }
+                    const activityData = { ...formData };
+                    if (hasPhotoUpload && photos.length > 0) {
+                        activityData.photos = photos;
+                    }
+                    addActivity(activityType, formData[fields[0].name] || 'Submitted', activityData);
+                    alert(activityType + ' submitted successfully!');
+                    setCurrentPage('home');
+                };
+
+                return (
+                    <div className="p-6 max-w-3xl mx-auto">
+                        <div className="flex items-center gap-4 mb-6">
+                            <button onClick={() => setCurrentPage('home')} className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium transition">
+                                <Icon name="ArrowLeft" size={20} />
+                                Back
+                            </button>
+                            <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
+                        </div>
+                        <div className="bg-white rounded-lg shadow-lg p-6 space-y-4">
+                            {fields.map((field, i) => (
+                                <div key={i}>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        {field.label} {field.required && <span className="text-red-500">*</span>}
+                                    </label>
+                                    {field.type === 'textarea' ? (
+                                        <textarea 
+                                            value={formData[field.name]} 
+                                            onChange={(e) => setFormData({...formData, [field.name]: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            rows={field.rows || 3} 
+                                            placeholder={field.placeholder || ''} 
+                                        />
+                                    ) : field.type === 'select' ? (
+                                        <select 
+                                            value={formData[field.name]} 
+                                            onChange={(e) => setFormData({...formData, [field.name]: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        >
+                                            {field.options.map((opt, j) => <option key={j} value={opt.value}>{opt.label}</option>)}
+                                        </select>
+                                    ) : (
+                                        <input 
+                                            type={field.type || 'text'} 
+                                            value={formData[field.name]} 
+                                            onChange={(e) => setFormData({...formData, [field.name]: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder={field.placeholder || ''} 
+                                        />
+                                    )}
+                                </div>
+                            ))}
+                            
+                            {hasPhotoUpload && (
+                                <div className="border-t pt-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Photos (Optional)</label>
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        multiple 
+                                        onChange={handlePhotoUpload} 
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                    />
+                                    {photos.length > 0 && (
+                                        <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+                                            {photos.map((photo, idx) => (
+                                                <div key={idx} className="relative">
+                                                    <img src={photo.data} alt={photo.name} className="w-full h-32 object-cover rounded-lg border" />
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => removePhoto(idx)} 
+                                                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                    <p className="text-xs text-gray-600 mt-1 truncate">{photo.name}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex gap-4 pt-4">
+                                <button onClick={handleSubmit} className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold">Submit</button>
+                                <button onClick={() => setCurrentPage('home')} className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition font-semibold">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+            const ReportsPage = () => {
+                const [selectedActivity, setSelectedActivity] = useState(null);
+                const canViewPhotos = currentUser.role === 'top_management' || currentUser.role === 'ho_manager';
+                
+                const stats = {
+                    observations: activities.filter(a => a.type === 'Safety Observation').length,
+                    training: activities.filter(a => a.type.includes('Training')).length,
+                    incidents: activities.filter(a => a.type.includes('Near Miss') || a.type.includes('Dangerous') || a.type.includes('First-Aid')).length,
+                    goodPractices: activities.filter(a => a.type === 'Good Practice').length
+                };
+
+                return (
+                    <div className="p-6">
+                        <div className="flex items-center gap-4 mb-6">
+                            <button onClick={() => setCurrentPage('home')} className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium transition">
+                                <Icon name="ArrowLeft" size={20} />
+                                Back
+                            </button>
+                            <h2 className="text-2xl font-bold text-gray-800">Reports & Analytics</h2>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                            <div className="bg-blue-500 text-white rounded-lg shadow-lg p-6">
+                                <Icon name="Shield" size={40} />
+                                <h3 className="text-3xl font-bold mt-3">{stats.observations}</h3>
+                                <p className="text-blue-100 text-sm">Safety Observations</p>
+                            </div>
+                            <div className="bg-green-500 text-white rounded-lg shadow-lg p-6">
+                                <Icon name="BookOpen" size={40} />
+                                <h3 className="text-3xl font-bold mt-3">{stats.training}</h3>
+                                <p className="text-green-100 text-sm">Training Sessions</p>
+                            </div>
+                            <div className="bg-orange-500 text-white rounded-lg shadow-lg p-6">
+                                <Icon name="AlertTriangle" size={40} />
+                                <h3 className="text-3xl font-bold mt-3">{stats.incidents}</h3>
+                                <p className="text-orange-100 text-sm">Incidents</p>
+                            </div>
+                            <div className="bg-teal-500 text-white rounded-lg shadow-lg p-6">
+                                <Icon name="TrendingUp" size={40} />
+                                <h3 className="text-3xl font-bold mt-3">{stats.goodPractices}</h3>
+                                <p className="text-teal-100 text-sm">Good Practices</p>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-lg shadow-lg p-6">
+                            <h3 className="text-xl font-bold text-gray-800 mb-4">All Activities</h3>
+                            {activities.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <Icon name="FileText" size={64} color="#d1d5db" />
+                                    <p className="text-gray-500 mt-4">No activities recorded yet</p>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead className="bg-gray-100">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
+                                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Description</th>
+                                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Submitted By</th>
+                                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Timestamp</th>
+                                                {canViewPhotos && <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Photos</th>}
+                                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {activities.map((act, i) => (
+                                                <tr key={i} className="border-b hover:bg-gray-50">
+                                                    <td className="px-4 py-3 text-sm font-medium text-gray-800">{act.type}</td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">{act.description}</td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">{act.submittedBy}</td>
+                                                    <td className="px-4 py-3 text-sm text-gray-500">{act.timestamp}</td>
+                                                    {canViewPhotos && (
+                                                        <td className="px-4 py-3 text-sm">
+                                                            {act.details.photos ? (
+                                                                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
+                                                                    {act.details.photos.length} photo(s)
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-gray-400 text-xs">No photos</span>
+                                                            )}
+                                                        </td>
+                                                    )}
+                                                    <td className="px-4 py-3">
+                                                        <button onClick={() => setSelectedActivity(act)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                                            View Details
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>{selectedActivity && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedActivity(null)}>
+                                <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                                    <div className="p-6">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <h3 className="text-2xl font-bold text-gray-800">{selectedActivity.type}</h3>
+                                            <button onClick={() => setSelectedActivity(null)} className="text-gray-500 hover:text-gray-700">
+                                                <Icon name="X" size={24} />
+                                            </button>
+                                        </div>
+                                        <div className="space-y-3 mb-6">
+                                            <p className="text-sm text-gray-600"><strong>Submitted By:</strong> {selectedActivity.submittedBy}</p>
+                                            <p className="text-sm text-gray-600"><strong>Timestamp:</strong> {selectedActivity.timestamp}</p>
+                                            <p className="text-sm text-gray-600"><strong>Description:</strong> {selectedActivity.description}</p>
+                                            <div className="border-t pt-3">
+                                                <h4 className="font-semibold text-gray-800 mb-2">Details:</h4>
+                                                {Object.entries(selectedActivity.details).map(([key, value]) => {
+                                                    if (key === 'photos') return null;
+                                                    return (
+                                                        <p key={key} className="text-sm text-gray-600 mb-1">
+                                                            <strong className="capitalize">{key.replace(/([A-Z])/g, ' $1')}:</strong> {value}
+                                                        </p>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        {canViewPhotos && selectedActivity.details.photos && selectedActivity.details.photos.length > 0 && (
+                                            <div className="border-t pt-4">
+                                                <h4 className="font-semibold text-gray-800 mb-3">Attached Photos ({selectedActivity.details.photos.length})</h4>
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                    {selectedActivity.details.photos.map((photo, idx) => (
+                                                        <div key={idx} className="border rounded-lg overflow-hidden">
+                                                            <img src={photo.data} alt={photo.name} className="w-full h-40 object-cover" />
+                                                            <p className="text-xs text-gray-600 p-2 bg-gray-50 truncate">{photo.name}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {!canViewPhotos && selectedActivity.details.photos && (
+                                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4">
+                                                <p className="text-yellow-800 text-sm">
+                                                    <strong>Note:</strong> Photos are only accessible to Top Management and HO Manager roles.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+            const HomePage = () => {
+                const modules = [
+                    { name: 'Safety Observation', icon: 'Shield', color: 'bg-red-500', page: 'observation' },
+                    { name: 'Induction Training', icon: 'BookOpen', color: 'bg-blue-500', page: 'induction' },
+                    { name: 'Daily Training Talk', icon: 'Users', color: 'bg-green-500', page: 'training' },
+                    { name: 'PEP Talk', icon: 'Activity', color: 'bg-yellow-500', page: 'pep' },
+                    { name: 'Special Technical Training', icon: 'FileText', color: 'bg-purple-500', page: 'technical' },
+                    { name: 'Safety Advisory Warning', icon: 'AlertTriangle', color: 'bg-orange-500', page: 'saw' },
+                    { name: 'Stop Work Order', icon: 'AlertTriangle', color: 'bg-red-600', page: 'swo' },
+                    { name: 'First-Aid Case', icon: 'Activity', color: 'bg-pink-500', page: 'firstaid' },
+                    { name: 'Near Miss Report', icon: 'AlertTriangle', color: 'bg-yellow-600', page: 'nearmiss' },
+                    { name: 'Dangerous Occurrence', icon: 'AlertTriangle', color: 'bg-red-700', page: 'dangerous' },
+                    { name: 'SIC Meeting', icon: 'Users', color: 'bg-indigo-500', page: 'sic' },
+                    { name: 'Good Practice', icon: 'TrendingUp', color: 'bg-teal-500', page: 'goodpractice' },
+                    { name: 'Rectification', icon: 'FileText', color: 'bg-cyan-500', page: 'rectification' },
+                    { name: 'Reports', icon: 'FileText', color: 'bg-gray-600', page: 'reports' }
+                ];
+
+                return (
+                    <div className="p-6">
+                        <div className="mb-6">
+                            <h2 className="text-3xl font-bold text-gray-800">Welcome, {currentUser.name}!</h2>
+                            <p className="text-gray-600 mt-1">{currentUser.project} • {currentUser.role.replace('_', ' ').toUpperCase()}</p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+                            {modules.map((m, i) => (
+                                <button 
+                                    key={i} 
+                                    onClick={() => { setCurrentPage(m.page); setSidebarOpen(false); }} 
+                                    className={`${m.color} text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition transform hover:-translate-y-1`}
+                                >
+                                    <div className="flex justify-center">
+                                        <Icon name={m.icon} size={48} />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-center mt-3">{m.name}</h3>
+                                </button>
+                            ))}
+                        </div>
+                        {activities.length > 0 && (
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h3 className="text-xl font-bold text-gray-800 mb-4">Recent Activities</h3>
+                                <div className="space-y-3">
+                                    {activities.slice(-5).reverse().map((act, i) => (
+                                        <div key={i} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded">
+                                            <p className="font-semibold text-gray-800">{act.type}</p>
+                                            <p className="text-sm text-gray-600">{act.description}</p>
+                                            <p className="text-xs text-gray-500">{act.timestamp}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+            const MainLayout = ({ children }) => (
+                <div className="min-h-screen bg-gray-100 flex overflow-hidden">
+                    <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 w-64 bg-blue-800 text-white transition-transform duration-300 z-20`}>
+                        <div className="p-6">
+                            <div className="flex items-center justify-between mb-8">
+                                <div className="flex items-center gap-2">
+                                    <Icon name="Shield" size={32} />
+                                    <h1 className="text-xl font-bold">HSE Insight</h1>
+                                </div>
+                                <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
+                                    <Icon name="X" size={24} />
+                                </button>
+                            </div>
+                            <div className="mb-8 bg-blue-700 rounded-lg p-4">
+                                <p className="text-xs text-blue-200 mb-1">Logged in as:</p>
+                                <p className="font-semibold text-sm">{currentUser.name}</p>
+                                <p className="text-xs text-blue-200 mt-1">{currentUser.role.replace('_', ' ').toUpperCase()}</p>
+                            </div>
+                            <nav className="space-y-2">
+                                <button 
+                                    onClick={() => { setCurrentPage('home'); setSidebarOpen(false); }} 
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-blue-700 transition"
+                                >
+                                    <Icon name="Home" size={20} />
+                                    <span>Home</span>
+                                </button>
+                                <button 
+                                    onClick={() => { setCurrentPage('reports'); setSidebarOpen(false); }} 
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-blue-700 transition"
+                                >
+                                    <Icon name="FileText" size={20} />
+                                    <span>Reports</span>
+                                </button>
+                                <button 
+                                    onClick={() => { setCurrentUser(null); setCurrentPage('login'); setEmpId(''); setPassword(''); setSidebarOpen(false); }} 
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-600 transition mt-8"
+                                >
+                                    <Icon name="LogOut" size={20} />
+                                    <span>Logout</span>
+                                </button>
+                            </nav>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex flex-col">
+                        <div className="bg-white shadow-sm p-4 flex items-center justify-between lg:hidden">
+                            <button onClick={() => setSidebarOpen(true)}>
+                                <Icon name="Menu" size={24} color="#4b5563" />
+                            </button>
+                            <h1 className="text-lg font-bold text-gray-800">HSE Insight</h1>
+                            <div className="w-6" />
+                        </div>
+                        <div className="flex-1 overflow-y-auto overflow-x-hidden h-screen">{children}</div>
+                    </div>
+                    {sidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-10 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+                </div>
+            );
+            // Login and Signup Pages
+            if (!currentUser) {
+                if (showSignup) {
+                    return (
+                        <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-4xl max-h-screen overflow-y-auto">
+                                <div className="text-center mb-6">
+                                    <div className="flex justify-center mb-3">
+                                        <Icon name="Shield" size={48} color="#2563eb" />
+                                    </div>
+                                    <h2 className="text-2xl font-bold text-gray-800">Sign Up - HSE Insight</h2>
+                                    <p className="text-sm text-gray-600 mt-2">Create your account - Sign up only once!</p>
+                                </div>
+                                {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">{error}</div>}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Employee ID *</label>
+                                        <input 
+                                            type="text" 
+                                            value={signupData.empId} 
+                                            onChange={(e) => setSignupData({...signupData, empId: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder="EMP001" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                                        <input 
+                                            type="text" 
+                                            value={signupData.name} 
+                                            onChange={(e) => setSignupData({...signupData, name: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder="John Doe" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                                        <input 
+                                            type="email" 
+                                            value={signupData.email} 
+                                            onChange={(e) => setSignupData({...signupData, email: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder="john@meil.com" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                                        <input 
+                                            type="tel" 
+                                            value={signupData.phone} 
+                                            onChange={(e) => setSignupData({...signupData, phone: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder="+91 98765 43210" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                                        <input 
+                                            type="password" 
+                                            value={signupData.password} 
+                                            onChange={(e) => setSignupData({...signupData, password: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+                                        <input 
+                                            type="password" 
+                                            value={signupData.confirmPassword} 
+                                            onChange={(e) => setSignupData({...signupData, confirmPassword: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Role *</label>
+                                        <select 
+                                            value={signupData.role} 
+                                            onChange={(e) => setSignupData({...signupData, role: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            disabled={loading}
+                                        >
+                                            <option value="site_officer">Site Safety Officer</option>
+                                            <option value="ho_manager">HO Manager</option>
+                                            <option value="top_management">Top Management</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Project *</label>
+                                        <input 
+                                            type="text" 
+                                            value={signupData.project} 
+                                            onChange={(e) => setSignupData({...signupData, project: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder="Project Alpha" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                                        <input 
+                                            type="text" 
+                                            value={signupData.department} 
+                                            onChange={(e) => setSignupData({...signupData, department: e.target.value})} 
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                            placeholder="Civil Engineering" 
+                                            disabled={loading} 
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 mt-6">
+                                    <button 
+                                        onClick={handleSignup} 
+                                        disabled={loading} 
+                                        className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                    >
+                                        {loading ? 'Creating Account...' : 'Sign Up'}
+                                    </button>
+                                    <button 
+                                        onClick={() => { setShowSignup(false); setError(''); }} 
+                                        disabled={loading} 
+                                        className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition font-semibold disabled:cursor-not-allowed"
+                                    >
+                                        Back to Login
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
+                            <div className="text-center mb-8">
+                                <div className="flex justify-center mb-4">
+                                    <Icon name="Shield" size={64} color="#2563eb" />
+                                </div>
+                                <h1 className="text-3xl font-bold text-gray-800">HSE Insight</h1>
+                                <p className="text-gray-600 mt-2">Health, Safety & Environment Management</p>
+                            </div>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Employee ID</label>
+                                    <input 
+                                        type="text" 
+                                        value={empId} 
+                                        onChange={(e) => setEmpId(e.target.value)} 
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                        placeholder="Enter Employee ID" 
+                                        disabled={loading} 
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                                    <input 
+                                        type="password" 
+                                        value={password} 
+                                        onChange={(e) => setPassword(e.target.value)} 
+                                        onKeyPress={(e) => e.key === 'Enter' && !loading && handleLogin()} 
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" 
+                                        placeholder="Enter Password" 
+                                        disabled={loading} 
+                                    />
+                                </div>
+                                {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
+                                <button 
+                                    onClick={handleLogin} 
+                                    disabled={loading} 
+                                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                >
+                                    {loading ? 'Logging in...' : 'Login'}
+                                </button>
+                                <div className="relative my-6">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <div className="w-full border-t border-gray-300"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-sm">
+                                        <span className="px-2 bg-white text-gray-500">New user?</span>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => { setShowSignup(true); setError(''); }} 
+                                    disabled={loading} 
+                                    className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                >
+                                    <Icon name="UserPlus" size={20} />
+                                    Sign Up
+                                </button>
+                            </div>
+                            <div className="mt-6 text-center text-sm text-gray-600">
+                                <p>Emergency Contact: 1800-XXX-XXXX</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            // Main render logic
+            const renderPage = () => {
+                if (currentPage === 'home') return <HomePage />;
+                if (currentPage === 'reports') return <ReportsPage />;
+                const formConfig = getModulePage(currentPage);
+                if (formConfig) {
+                    const hasPhotoUpload = ['observation', 'induction', 'dangerous', 'rectification'].includes(currentPage);
+                    return <FormPage title={formConfig.title} fields={formConfig.fields} activityType={formConfig.type} hasPhotoUpload={hasPhotoUpload} />;
+                }
+                return <HomePage />;
+            };
+
+            return <MainLayout>{renderPage()}</MainLayout>;
+        };
+
+        // Render the app
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
